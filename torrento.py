@@ -47,7 +47,6 @@ class DownloadThread(QThread):
 
     def run(self) -> None:
         """Run the download process."""
-        logging.debug("Command args: %s", self.args)
         with subprocess.Popen(
             self.args,
             stdout=subprocess.PIPE,
@@ -216,24 +215,28 @@ class TorrentDownloader(QWidget):  # pylint: disable=too-many-instance-attribute
             )
             result.check_returncode()
             lines = result.stdout.strip().split("\n")
-            parsing_files = False
-            file_info = ""
+            parsing_files = False  # Flag to indicate when we start parsing file entries
+            file_info = ""  # Temporarily store file information across multiple lines
             for line in lines:
-                if line.startswith("Files:"):
-                    parsing_files = True
-                    continue
-
-                if parsing_files and line.startswith("---+"):
+                if line.startswith("Files:"): # pylint: disable=R1724
+                    parsing_files = True  # Start parsing file entries from now on
+                    continue  # Skip the 'Files:' line
+                elif parsing_files and line.startswith("---+"):
+                    # End of a file entry, add it to the list widget and reset file_info
                     self.list_widget.addItem(file_info.strip())
                     file_info = ""
-
-                if parsing_files and line.startswith("idx|") or line.startswith("===+"):
+                elif (
+                    parsing_files and line.startswith("idx|") or line.startswith("===+")
+                ):
+                    # Skip the header line
                     continue
-
-                if parsing_files and line:
-                    file_info += line + "\n"
-            if file_info:
+                elif parsing_files and line:
+                    file_info += (
+                        line + "\n"
+                    )  # Accumulate file information across multiple lines
+            if file_info:  # Add the last file entry if there is any
                 self.list_widget.addItem(file_info.strip())
+
         except subprocess.CalledProcessError as err:
             print(f"aria2c exited with status {err.returncode}, stderr: {err.stderr}")
 
@@ -251,16 +254,19 @@ class TorrentDownloader(QWidget):  # pylint: disable=too-many-instance-attribute
         if file_indices:
             self.download_button.setEnabled(False)
             self.progress_bar.setValue(0)
+            
             # Start download in a separate thread
             args = [
                 "aria2c",
                 f"--select-file={file_indices}",
                 self.torrent_path,
                 f"--dir={download_location}",
-                "--summary-interval=0.1",
+                "--summary-interval=2",
                 "--allow-overwrite=true",
                 "--max-connection-per-server=16",
                 "--min-split-size=1M",
+                "--file-allocation=none",
+
             ]
             print(args)
             self.download_thread = DownloadThread(args)
@@ -290,7 +296,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     downloader = TorrentDownloader()
     downloader.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
