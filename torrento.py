@@ -1,3 +1,4 @@
+import os
 import sys
 import subprocess
 import re
@@ -15,12 +16,16 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QSpacerItem,
     QSizePolicy,
+    QFileDialog,
+    QCheckBox,
 )
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, Qt
 
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
+
+downloads_dir = downloads_dir = os.path.expanduser('~/Downloads')
 
 class DownloadThread(QThread):
     """Thread to handle the download process."""
@@ -67,11 +72,10 @@ class DownloadThread(QThread):
 
 class TorrentDownloader(QWidget):
     """Widget to handle the torrent downloading UI and functionality."""
-    def __init__(self, torrent_path: str, torrent_name: str) -> None:
-        """Initialize the TorrentDownloader with the path and name of the torrent."""
+    def __init__(self) -> None:  # Updated constructor
         super().__init__()
-        self.torrent_path = torrent_path
-        self.torrent_name = torrent_name
+        self.torrent_path = None
+        self.torrent_name = "Torrent Downloader"
         self.download_thread = None
         self.init_ui()
 
@@ -82,9 +86,16 @@ class TorrentDownloader(QWidget):
 
         self.layout = QVBoxLayout()
 
+        # New Load Torrent File Button and Label
+        self.load_torrent_button = QPushButton("Load Torrent")
+        self.load_torrent_button.setMaximumWidth(100)
+        self.load_torrent_button.clicked.connect(self.load_torrent_file)
+        self.file_info_layout = QHBoxLayout()
+        self.file_info_layout.addWidget(self.load_torrent_button)
+
         self.download_location_layout = QHBoxLayout()
         self.download_location_label = QLabel("Download Location:")
-        self.download_location_textbox = QLineEdit("/Users/sivanagendra/Downloads/")
+        self.download_location_textbox = QLineEdit(downloads_dir)
         
         self.download_location_layout.addWidget(self.download_location_label)
         self.download_location_layout.addWidget(self.download_location_textbox)
@@ -102,7 +113,6 @@ class TorrentDownloader(QWidget):
                 background-color: #043757;
             }
         """)
-        self.populate_file_list()
 
         self.download_button = QPushButton("Download")
         self.download_button.clicked.connect(self.handle_download)
@@ -127,25 +137,53 @@ class TorrentDownloader(QWidget):
             }
         """)
 
+        # Create the checkbox
+        self.more_info_checkbox = QCheckBox("More info")
+        self.more_info_checkbox.setChecked(True)
+        self.more_info_checkbox.stateChanged.connect(self.toggle_log_visibility)
+
+
         self.progress_layout.addWidget(self.progress_label)
         self.progress_layout.addWidget(self.progress_bar)
+        self.progress_layout.addWidget(self.more_info_checkbox)
 
 
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
         self.log_widget.setFixedHeight(100)
+
         
+        self.layout.addLayout(self.file_info_layout)
+        self.layout.addWidget(self.list_widget)
+        self.layout.addItem(spacer)
         self.layout.addLayout(self.download_location_layout)
         self.layout.addItem(spacer)
-        self.layout.addWidget(self.list_widget)
         self.layout.addWidget(self.download_button)
         self.layout.addLayout(self.progress_layout)
         self.layout.addWidget(self.log_widget)
 
         self.setLayout(self.layout)
 
+    def toggle_log_visibility(self, state: int) -> None:
+        """Toggle the visibility of the log widget based on the state of the checkbox."""
+        if state == 2:
+            self.log_widget.setVisible(True)
+        elif state == 0:
+            self.log_widget.setVisible(False)
+
+    def load_torrent_file(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.ReadOnly
+        file_name, _ = QFileDialog.getOpenFileName(self, "Load Torrent File", downloads_dir, "Torrent Files (*.torrent);;All Files (*)", options=options)
+        if file_name:
+            self.torrent_path = file_name
+            self.torrent_name = file_name.split("/")[-1]
+            self.setWindowTitle(self.torrent_name)
+            self.populate_file_list()
+
     def populate_file_list(self) -> None:
         """Populate the list widget with available files from the torrent."""
+        self.list_widget.clear()
         try:
             result = subprocess.run(
                 ["aria2c", "--show-files=true", self.torrent_path],
@@ -178,47 +216,15 @@ class TorrentDownloader(QWidget):
 
     def handle_download(self) -> None:
         """Handle the download based on selection."""
-        if self.list_widget.selectedItems():
-            self.download_selected_files()
-        else:
-            self.download_all_files()
-
-    def download_selected_files(self) -> None:
-        """Download the selected files."""
-        selected_items = self.list_widget.selectedItems()
-        file_indices = ",".join(item.text().split("|")[0] for item in selected_items)
         download_location = self.download_location_textbox.text()
-        if file_indices:
-            self.download_button.setEnabled(False)
-            self.progress_bar.setValue(0)
-            # Start download in a separate thread
-            args = [
-                "aria2c",
-                f"--select-file={file_indices}",
-                self.torrent_path,
-                f"--dir={download_location}",
-                "--allow-overwrite=true",
-            ]
-            print(args)
-            self.download_thread = DownloadThread(args)
-            self.download_thread.progress_update.connect(self.update_progress)
-            self.download_thread.log_message.connect(self.append_log_message)
-            self.download_thread.download_complete.connect(self.on_download_complete)
-            self.download_thread.start()
-
-    def download_all_files(self) -> None:
-        """Download all files if none are selected, otherwise download the selected files."""
-        if not self.list_widget.selectedItems():
-            # If no items are selected, download all files
-            file_indices = "1-" + str(self.list_widget.count())
-        else:
-            # If some items are selected, download the selected files
+        if self.list_widget.selectedItems():
             selected_items = self.list_widget.selectedItems()
             file_indices = ",".join(
                 item.text().split("|")[0] for item in selected_items
             )
-
-        download_location = self.download_location_textbox.text()
+        else:
+            file_indices = "1-" + str(self.list_widget.count())
+        
         if file_indices:
             self.download_button.setEnabled(False)
             self.progress_bar.setValue(0)
@@ -229,8 +235,11 @@ class TorrentDownloader(QWidget):
                 self.torrent_path,
                 f"--dir={download_location}",
                 "--summary-interval=0.1",
-                "--allow-overwrite=true"  # Add this line
+                "--allow-overwrite=true",
+                "--max-connection-per-server=16",
+                "--min-split-size=1M",
             ]
+            print(args)
             self.download_thread = DownloadThread(args)
             self.download_thread.progress_update.connect(self.update_progress)
             self.download_thread.log_message.connect(self.append_log_message)
@@ -255,16 +264,12 @@ class TorrentDownloader(QWidget):
         self.log_widget.append(message)
 
 
-def main(torrent_path: str) -> None:
+def main() -> None:  # Updated main function
     """Main function to run the TorrentDownloader application."""
     app = QApplication(sys.argv)
-    torrent_name = torrent_path.split("/")[-1]
-    downloader = TorrentDownloader(torrent_path, torrent_name)
+    downloader = TorrentDownloader()
     downloader.show()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: torrento.py <torrent path>")
-        sys.exit(1)
-    main(sys.argv[1])
+    main()
