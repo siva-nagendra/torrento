@@ -1,0 +1,6 @@
+# Python version
+python==3.10.*
+PySide6==6.2.0
+# External utilities (not installable via pip)
+# Note: You'll need to ensure these are installed manually.
+# aria2c
