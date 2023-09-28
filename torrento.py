@@ -12,22 +12,32 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QLabel,
     QLineEdit,
+    QTextEdit,
+    QSpacerItem,
+    QSizePolicy,
 )
 from PySide6.QtCore import QThread, Signal
+
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 class DownloadThread(QThread):
     """Thread to handle the download process."""
     progress_update: Signal = Signal(int)
+    log_message: Signal = Signal(str)
+    download_complete: Signal = Signal()  # Signal for download completion
 
     def __init__(self, args: List[str]) -> None:
         """Initialize the DownloadThread with the necessary arguments for aria2c."""
         super().__init__()
         self.args = args
+        self.process = None  # Store the process object
 
     def run(self) -> None:
-        """Run the download process and emit progress updates."""
+        logging.debug(f"Command args: {self.args}")
         try:
-            process = subprocess.Popen(
+            self.process = subprocess.Popen(
                 self.args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -35,16 +45,24 @@ class DownloadThread(QThread):
                 universal_newlines=True,
             )
             while True:
-                line = process.stdout.readline()
+                line = self.process.stdout.readline()
                 if not line:
                     break
+                self.log_message.emit(line)  # Emit log message signal
+                if "Download of selected files was complete" in line:
+                    self.download_complete.emit()  # Emit download complete signal
                 progress = re.search(r"\((\d+)%\)", line)
                 if progress:
                     progress_value = int(progress.group(1))
                     self.progress_update.emit(progress_value)
-            process.wait()
+            self.process.wait()
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            logging.exception("An unexpected error occurred")
+
+    def stop(self) -> None:
+        """Terminate the aria2c process if it's still running."""
+        if self.process and self.process.poll() is None:  # Check if process is still running
+            self.process.terminate()
 
 
 class TorrentDownloader(QWidget):
@@ -64,20 +82,30 @@ class TorrentDownloader(QWidget):
 
         self.layout = QVBoxLayout()
 
-        # Add a label to indicate available files
-        available_label = QLabel("Available Files:")
+        self.download_location_layout = QHBoxLayout()
+        self.download_location_label = QLabel("Download Location:")
+        self.download_location_textbox = QLineEdit("/Users/sivanagendra/Downloads/")
         
+        self.download_location_layout.addWidget(self.download_location_label)
+        self.download_location_layout.addWidget(self.download_location_textbox)
+
+        spacer = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)  # Adjust the height value to 10
 
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QListWidget.ExtendedSelection)
+        self.list_widget.setStyleSheet("""
+            QListWidget::item {
+                border-bottom: 1px solid #353535;
+                padding: 5px;
+            }
+            QListWidget::item:selected {
+                background-color: #043757;
+            }
+        """)
         self.populate_file_list()
 
-        self.download_button = QPushButton("Download Selected")
-        self.download_button.clicked.connect(self.download_selected_files)
-
-        # Add a "Download All" button
-        self.download_all_button = QPushButton("Download All")
-        self.download_all_button.clicked.connect(self.download_all_files)
+        self.download_button = QPushButton("Download")
+        self.download_button.clicked.connect(self.handle_download)
 
         # Create a horizontal layout for the progress components
         self.progress_layout = QHBoxLayout()
@@ -85,23 +113,34 @@ class TorrentDownloader(QWidget):
         # Create and add the Progress label, ProgressBar, and Progress Percentage label to the horizontal layout
         self.progress_label = QLabel("Progress:")
         self.progress_bar = QProgressBar()
-        self.progress_percentage_label = QLabel("0%")
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid grey;
+                border-radius: 5px;
+                text-align: center;
+                height: 20px;
+            }
+
+            QProgressBar::chunk {
+                background-color: #043757;
+                width: 10px;  /* makes it a dashed progress bar */
+            }
+        """)
 
         self.progress_layout.addWidget(self.progress_label)
         self.progress_layout.addWidget(self.progress_bar)
-        self.progress_layout.addWidget(self.progress_percentage_label)
 
-        # Add a download location textbox with default value
-        self.download_location_label = QLabel("Download Location:")
-        self.download_location_textbox = QLineEdit("/Users/sivanagendra/Downloads/")
+
+        self.log_widget = QTextEdit()
+        self.log_widget.setReadOnly(True)
+        self.log_widget.setFixedHeight(100)
         
-        self.layout.addWidget(self.download_location_label)
-        self.layout.addWidget(self.download_location_textbox)
-        self.layout.addWidget(available_label)
+        self.layout.addLayout(self.download_location_layout)
+        self.layout.addItem(spacer)
         self.layout.addWidget(self.list_widget)
         self.layout.addWidget(self.download_button)
-        self.layout.addWidget(self.download_all_button)
         self.layout.addLayout(self.progress_layout)
+        self.layout.addWidget(self.log_widget)
 
         self.setLayout(self.layout)
 
@@ -125,6 +164,9 @@ class TorrentDownloader(QWidget):
                     # End of a file entry, add it to the list widget and reset file_info
                     self.list_widget.addItem(file_info.strip())
                     file_info = ""
+                elif parsing_files and line.startswith("idx|") or line.startswith("===+"):
+                    # Skip the header line
+                    continue
                 elif parsing_files and line:
                     file_info += (
                         line + "\n"
@@ -133,8 +175,13 @@ class TorrentDownloader(QWidget):
                 return self.list_widget.addItem(file_info.strip())
         except subprocess.CalledProcessError as e:
             print(f"aria2c exited with status {e.returncode}, stderr: {e.stderr}")
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+
+    def handle_download(self) -> None:
+        """Handle the download based on selection."""
+        if self.list_widget.selectedItems():
+            self.download_selected_files()
+        else:
+            self.download_all_files()
 
     def download_selected_files(self) -> None:
         """Download the selected files."""
@@ -144,26 +191,20 @@ class TorrentDownloader(QWidget):
         if file_indices:
             self.download_button.setEnabled(False)
             self.progress_bar.setValue(0)
-            self.progress_label.setText("Progress: 0%")
-
             # Start download in a separate thread
             args = [
                 "aria2c",
                 f"--select-file={file_indices}",
                 self.torrent_path,
                 f"--dir={download_location}",
-                "--max-connection-per-server=16",
-                "--min-split-size=1M",
-                "--summary-interval=1",
                 "--allow-overwrite=true",
             ]
             print(args)
             self.download_thread = DownloadThread(args)
             self.download_thread.progress_update.connect(self.update_progress)
+            self.download_thread.log_message.connect(self.append_log_message)
+            self.download_thread.download_complete.connect(self.on_download_complete)
             self.download_thread.start()
-            if not self.download_thread.gid:
-                print("Failed to get gid")
-                return
 
     def download_all_files(self) -> None:
         """Download all files if none are selected, otherwise download the selected files."""
@@ -180,34 +221,38 @@ class TorrentDownloader(QWidget):
         download_location = self.download_location_textbox.text()
         if file_indices:
             self.download_button.setEnabled(False)
-            self.download_all_button.setEnabled(
-                False
-            )  # Disable the "Download All" button
             self.progress_bar.setValue(0)
-            self.progress_label.setText("Progress: 0%")
-
             # Start download in a separate thread
             args = [
                 "aria2c",
                 f"--select-file={file_indices}",
                 self.torrent_path,
                 f"--dir={download_location}",
-                "--max-connection-per-server=16",
-                "--min-split-size=1M",
-                "--summary-interval=1",
+                "--summary-interval=0.1",
+                "--allow-overwrite=true"  # Add this line
             ]
             self.download_thread = DownloadThread(args)
             self.download_thread.progress_update.connect(self.update_progress)
+            self.download_thread.log_message.connect(self.append_log_message)
+            self.download_thread.download_complete.connect(self.on_download_complete)
             self.download_thread.start()
 
     def update_progress(self, progress_value: int) -> None:
         """Update the progress bar and label with the current progress value."""
+        logging.info(f"Progress update: {progress_value}")
         self.progress_bar.setValue(progress_value)
-        self.progress_percentage_label.setText(f"{progress_value}%")
         if progress_value == 100:
             self.download_button.setEnabled(True)
             self.download_all_button.setEnabled(True)
-            self.progress_percentage_label.setText("Download complete")
+    
+    def on_download_complete(self) -> None:
+        """Handle download completion by setting progress to 100%."""
+        self.progress_bar.setValue(100)
+        self.download_button.setEnabled(True)
+    
+    def append_log_message(self, message: str) -> None:
+        """Append a log message to the log widget."""
+        self.log_widget.append(message)
 
 
 def main(torrent_path: str) -> None:
