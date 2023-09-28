@@ -1,6 +1,6 @@
-# Torronto - Torrent Downloader 🚀
+# Torrento - Torrent Downloader 🚀
 
-Torronto is a streamlined and intuitive torrent downloader built with Python and Qt. It provides a friendly graphical user interface to manage torrent downloads efficiently. Whether you're downloading a single file or a bunch, Torronto has got you covered.
+Torrento is a streamlined and intuitive torrent downloader built with Python and Qt. It provides a friendly graphical user interface to manage torrent downloads efficiently. Whether you're downloading a single file or a bunch, Torrento has got you covered.
 
 
 ## Features 🌟
@@ -13,7 +13,7 @@ Torronto is a streamlined and intuitive torrent downloader built with Python and
 
 ## Getting Started 🛠
 
-These instructions will help you set up and run Torronto on your machine.
+These instructions will help you set up and run Torrento on your machine.
 
 ### Prerequisites
 
@@ -25,8 +25,8 @@ These instructions will help you set up and run Torronto on your machine.
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/Torronto.git
-cd Torronto
+git clone https://github.com/yourusername/Torrento.git
+cd Torrento
 ```
 
 2. Install required Python packages:
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 
 1. To start the application, run the following command in the terminal:
 ```bash
-python torronto.py <torrent path>
+python Torrento.py <torrent path>
 ```
 Replace `<torrent path>` with the path to your torrent file.
 
@@ -49,7 +49,7 @@ Replace `<torrent path>` with the path to your torrent file.
 
 ## Contributing 🤝
 
-Feel free to submit issues, or open pull requests to improve Torronto. All contributions are welcome!
+Feel free to submit issues, or open pull requests to improve Torrento. All contributions are welcome!
 
 ## License 📄
 
