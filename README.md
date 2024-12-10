@@ -49,11 +49,11 @@ export REZ_PACKAGES_PATH=~/packages
 
 1. To start the application with Rez, run the following command in the terminal:
 ```bash
-rez-env torrento -- python Torrento.py
+rez-env torrento -- python torrento.py
 ```
    Or without Rez:
 ```bash
-python Torrento.py
+python torrento.py
 ```
 
 2. Load a torrent file by clicking on "Load Torrent" button and select the torrent file you wish to download.

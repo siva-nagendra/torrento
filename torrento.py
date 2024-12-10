@@ -277,7 +277,7 @@ class TorrentDownloader(QWidget):  # pylint: disable=too-many-instance-attribute
 
     def update_progress(self, progress_value: int) -> None:
         """Update the progress bar and label with the current progress value."""
-        logging.info("Progress update: %s", f"{progress_value}%")
+        logging.debug("Progress update: %s", f"{progress_value}%")
         self.progress_bar.setValue(progress_value)
         if progress_value == 100:
             self.download_button.setEnabled(True)
